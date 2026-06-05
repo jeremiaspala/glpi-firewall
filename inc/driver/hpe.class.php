@@ -5,20 +5,32 @@ class PluginFirewallDriverHpe {
 
     public static function getConfig(array $device, PluginFirewallConnector $conn): string {
         $pass  = PluginFirewallConfig::decryptPassword($device['password_enc']);
-        $model = strtolower($device['model'] ?? '');
-        $isComware = preg_match('/\b(comware|1910|1920|1950|5500|5900|7500)\b/', $model);
+        $model = $device['model'] ?? '';
+        // \b fails on "HP1920" (HP+1920 are both \w), use plain substring match
+        $isComware = (bool)preg_match('/(comware|1910|1920|1950|5500|5900|7500)/i', $model);
 
         if ($isComware) {
-            $output = $conn->sshCommand(
+            // Comware: screen-length disable → display current-configuration
+            $output = $conn->sshInteractive(
                 $device['hostname'], (int)$device['port'],
                 $device['username'], $pass,
-                'screen-length disable ; display current-configuration'
+                [
+                    ['expect' => '>',  'send' => 'screen-length disable',       'timeout' => 10],
+                    ['expect' => '>',  'send' => 'display current-configuration','timeout' => 5],
+                    ['drain'  => 120],
+                    ['send'   => 'quit'],
+                ]
             );
         } else {
-            $output = $conn->sshCommand(
+            // ProCurve/ArubaOS-Switch: no page then show running-config
+            $output = $conn->sshInteractive(
                 $device['hostname'], (int)$device['port'],
                 $device['username'], $pass,
-                'no page ; show running-config'
+                [
+                    ['expect' => '#',  'send' => 'no page',           'timeout' => 10],
+                    ['expect' => '#',  'send' => 'show running-config','timeout' => 5],
+                    ['drain'  => 120],
+                ]
             );
         }
         return trim($output);
