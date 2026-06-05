@@ -83,8 +83,8 @@ class PluginFirewallDevice extends CommonDBTM {
         echo '<div class="card-body p-0">';
         echo '<table class="table table-hover mb-0">';
         echo '<thead><tr>';
-        echo '<th>Nombre</th><th>Host</th><th>Tipo</th><th>Vendor</th>';
-        echo '<th>Protocolo</th><th>Último backup</th><th>Estado</th><th>Acciones</th>';
+        echo '<th>Nombre</th><th>Host</th><th>Vendor</th>';
+        echo '<th>Protocolo</th><th>Schedule</th><th>Inventario GLPI</th><th>Último backup</th><th>Estado</th><th>Acciones</th>';
         echo '</tr></thead><tbody>';
 
         foreach ($devices as $dev) {
@@ -92,15 +92,26 @@ class PluginFirewallDevice extends CommonDBTM {
             $statusIcon   = $dev['last_backup_status'] === 'success' ? 'ti-circle-check' : ($dev['last_backup_status'] ? 'ti-alert-circle' : 'ti-minus');
             $lastBackup   = $dev['last_backup_date'] ? date('d/m/Y H:i', strtotime($dev['last_backup_date'])) : 'Nunca';
             $vendorLabel  = $vendors[$dev['vendor']] ?? $dev['vendor'];
-            $typeLabel    = $types[$dev['device_type']] ?? $dev['device_type'];
             $activeClass  = $dev['is_active'] ? '' : 'table-secondary text-muted';
+
+            $glpiLink = '';
+            if (!empty($dev['glpi_networkequipments_id'])) {
+                $glpiUrl  = $CFG_GLPI['root_doc'] . '/front/networkequipment.form.php?id=' . (int)$dev['glpi_networkequipments_id'];
+                $glpiLink = "<a href='$glpiUrl' target='_blank' class='btn btn-sm btn-outline-info' title='Ver en inventario GLPI'><i class='ti ti-external-link'></i></a>";
+            } else {
+                $glpiLink = "<span class='text-muted small'>—</span>";
+            }
+
+            $scheduleLabels = ['manual' => 'Manual', 'daily' => 'Diario', 'weekly' => 'Semanal'];
+            $scheduleLabel  = $scheduleLabels[$dev['backup_schedule'] ?? 'manual'] ?? $dev['backup_schedule'];
 
             echo "<tr class='$activeClass'>";
             echo "<td><a href='device.form.php?id={$dev['id']}'>" . htmlspecialchars($dev['name']) . "</a></td>";
             echo "<td><code>" . htmlspecialchars($dev['hostname']) . "</code></td>";
-            echo "<td><span class='badge bg-secondary'>$typeLabel</span></td>";
             echo "<td>" . htmlspecialchars($vendorLabel) . "</td>";
             echo "<td><span class='badge bg-info'>" . strtoupper($dev['protocol']) . ":{$dev['port']}</span></td>";
+            echo "<td><span class='badge bg-secondary'>$scheduleLabel</span></td>";
+            echo "<td>$glpiLink</td>";
             echo "<td class='text-muted small'>$lastBackup</td>";
             echo "<td id='status-{$dev['id']}' class='$statusClass'><i class='ti $statusIcon'></i></td>";
             echo "<td>";
@@ -112,7 +123,7 @@ class PluginFirewallDevice extends CommonDBTM {
         }
 
         if (count($devices) === 0) {
-            echo "<tr><td colspan='8' class='text-center text-muted py-4'>No hay dispositivos configurados.</td></tr>";
+            echo "<tr><td colspan='9' class='text-center text-muted py-4'>No hay dispositivos configurados.</td></tr>";
         }
 
         echo '</tbody></table></div></div>';
@@ -343,6 +354,23 @@ class PluginFirewallDevice extends CommonDBTM {
         }
         echo '</select></div>';
 
+        // GLPI Network Equipment link
+        $neRows = $DB->request([
+            'SELECT' => ['id', 'name'],
+            'FROM'   => 'glpi_networkequipments',
+            'WHERE'  => ['is_deleted' => 0, 'is_template' => 0],
+            'ORDER'  => 'name ASC',
+        ]);
+        $currentNeId = (int)($device['glpi_networkequipments_id'] ?? 0);
+        echo '<div class="col-md-8"><label class="form-label">Equipo en inventario GLPI <span class="text-muted">(vínculo)</span></label>';
+        echo '<select name="glpi_networkequipments_id" class="form-select" id="glpi_ne_select">';
+        echo '<option value="0">— Sin vínculo —</option>';
+        foreach ($neRows as $ne) {
+            $sel = $currentNeId === (int)$ne['id'] ? 'selected' : '';
+            echo "<option value='{$ne['id']}' $sel>" . htmlspecialchars($ne['name']) . " (id={$ne['id']})</option>";
+        }
+        echo '</select></div>';
+
         // SNMP community for network map
         echo '<div class="col-md-4"><label class="form-label">Comunidad SNMP</label>';
         echo '<input type="text" name="snmp_community" class="form-control" placeholder="public" value="' . $v('snmp_community') . '"></div>';
@@ -415,21 +443,23 @@ class PluginFirewallDevice extends CommonDBTM {
             return;
         }
 
+        $neId = (int)($post['glpi_networkequipments_id'] ?? 0);
         $data = [
-            'name'          => trim($post['name'] ?? ''),
-            'hostname'      => trim($post['hostname'] ?? ''),
-            'model'         => trim($post['model'] ?? ''),
-            'vendor'        => $post['vendor'] ?? 'cisco',
-            'device_type'   => $post['device_type'] ?? 'switch',
-            'protocol'      => $post['protocol'] ?? 'ssh',
-            'port'          => (int)($post['port'] ?? 22),
-            'username'      => trim($post['username'] ?? ''),
-            'is_active'     => isset($post['is_active']) ? 1 : 0,
-            'backup_schedule' => $post['backup_schedule'] ?? 'manual',
-            'comment'       => trim($post['comment'] ?? ''),
-            'snmp_community' => trim($post['snmp_community'] ?? ''),
-            'backup_command' => trim($post['backup_command'] ?? '') ?: null,
-            'date_mod'       => date('Y-m-d H:i:s'),
+            'name'                      => trim($post['name'] ?? ''),
+            'hostname'                  => trim($post['hostname'] ?? ''),
+            'model'                     => trim($post['model'] ?? ''),
+            'vendor'                    => $post['vendor'] ?? 'cisco',
+            'device_type'               => $post['device_type'] ?? 'switch',
+            'protocol'                  => $post['protocol'] ?? 'ssh',
+            'port'                      => (int)($post['port'] ?? 22),
+            'username'                  => trim($post['username'] ?? ''),
+            'is_active'                 => isset($post['is_active']) ? 1 : 0,
+            'backup_schedule'           => $post['backup_schedule'] ?? 'manual',
+            'comment'                   => trim($post['comment'] ?? ''),
+            'snmp_community'            => trim($post['snmp_community'] ?? ''),
+            'backup_command'            => trim($post['backup_command'] ?? '') ?: null,
+            'glpi_networkequipments_id' => $neId > 0 ? $neId : null,
+            'date_mod'                  => date('Y-m-d H:i:s'),
         ];
 
         if (!empty($post['password'])) {
