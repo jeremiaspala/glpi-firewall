@@ -53,7 +53,7 @@ class PluginFirewallConnector {
             . ' -o LogLevel=ERROR'
             . ' -o ServerAliveInterval=10'
             . ' -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group14-sha256,diffie-hellman-group1-sha1'
-            . ' -o HostKeyAlgorithms=+ssh-rsa,rsa-sha2-256,rsa-sha2-512'
+            . ' -o HostKeyAlgorithms=+ssh-rsa,rsa-sha2-256,rsa-sha2-512,ssh-dss'
             . ' -o Ciphers=+aes256-cbc,aes128-cbc,3des-cbc,aes256-ctr,aes128-ctr'
             . ' -o PubkeyAuthentication=no'
             . ' -p %d %s@%s %s',
@@ -118,7 +118,7 @@ class PluginFirewallConnector {
             . ' -o BatchMode=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR'
             . ' -o ServerAliveInterval=10'
             . ' -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group14-sha256,diffie-hellman-group1-sha1'
-            . ' -o HostKeyAlgorithms=+ssh-rsa,rsa-sha2-256,rsa-sha2-512'
+            . ' -o HostKeyAlgorithms=+ssh-rsa,rsa-sha2-256,rsa-sha2-512,ssh-dss'
             . ' -o Ciphers=+aes256-cbc,aes128-cbc,3des-cbc,aes256-ctr,aes128-ctr'
             . ' -o MACs=+hmac-sha1,hmac-sha2-256'
             . ' -o PubkeyAuthentication=no'
@@ -179,10 +179,12 @@ class PluginFirewallConnector {
                 usleep(200000);
             }
 
-            // drain: lee hasta silencio de 3s o el timeout indicado
+            // drain: lee hasta silencio de 3s o el timeout indicado.
+            // 'more' => 'PATTERN': cuando aparece el patrón de paginación, envía espacio y sigue.
             if (isset($step['drain'])) {
-                $maxDrain = (int)$step['drain'];
-                $this->log("Paso $n: drenando output (max {$maxDrain}s, corta a 3s de silencio)");
+                $maxDrain    = (int)$step['drain'];
+                $morePattern = $step['more'] ?? null;
+                $this->log("Paso $n: drenando output (max {$maxDrain}s, corta a 3s de silencio" . ($morePattern ? ", maneja '$morePattern'" : '') . ")");
                 $deadline = time() + $maxDrain;
                 $lastData = time();
                 while (time() < $deadline) {
@@ -190,6 +192,11 @@ class PluginFirewallConnector {
                     if ($chunk !== false && $chunk !== '') {
                         $fullOutput .= $chunk;
                         $lastData    = time();
+                        // Paginación: enviar espacio para continuar y quitar el prompt del output
+                        if ($morePattern && strpos($fullOutput, $morePattern) !== false) {
+                            $fullOutput = str_replace($morePattern, '', $fullOutput);
+                            fwrite($pipes[0], ' ');
+                        }
                     } elseif (time() - $lastData >= 3) {
                         $this->log("  → silencio de 3s, drain terminado. Total: " . strlen($fullOutput) . " bytes");
                         break;

@@ -3,25 +3,48 @@ PluginFirewallDriverRegistry::register('hpe', 'PluginFirewallDriverHpe', 'HPE (P
 
 class PluginFirewallDriverHpe {
 
-    public static function getConfig(array $device, PluginFirewallConnector $conn): string {
-        $pass  = PluginFirewallConfig::decryptPassword($device['password_enc']);
-        $model = $device['model'] ?? '';
-        // \b fails on "HP1920" (HP+1920 are both \w), use plain substring match
-        $isComware = (bool)preg_match('/(comware|1910|1920|1950|5500|5900|7500)/i', $model);
+    /**
+     * Comware Lite (HP1910/1920/1950/5500) doesn't support SSH exec channel.
+     * sshCommand() returns exit 0 but 0 bytes — must use interactive shell.
+     */
+    public static function requiresInteractiveSsh(array $device): bool {
+        return (bool)preg_match('/(comware|1910|1920|1950|5500|5900|7500)/i', $device['model'] ?? '');
+    }
 
-        // sshCommand() no asigna PTY (-tt) → los dispositivos no paginan el output.
-        // sshInteractive() usa -tt y el drain corta en el --More-- de Comware/ProCurve.
+    public static function getConfig(array $device, PluginFirewallConnector $conn): string {
+        $pass      = PluginFirewallConfig::decryptPassword($device['password_enc']);
+        $model     = $device['model'] ?? '';
+        $isComware = self::requiresInteractiveSsh($device);
+        // Respect custom backup_command if set, otherwise use vendor default
+        $customCmd = trim($device['backup_command'] ?? '');
+        $cmd       = $customCmd ?: ($isComware ? 'display current-configuration' : 'show running-config');
+
         if ($isComware) {
-            $output = $conn->sshCommand(
+            // Comware Lite CLI is simplified — display current-configuration is hidden behind
+            // _cmdline-mode on, which requires confirmation + password.
+            // Default factory password is Jinhua1920keyboard; use enable_password_enc to override.
+            $cmdlinePass = !empty($device['enable_password_enc'])
+                           ? PluginFirewallConfig::decryptPassword($device['enable_password_enc'])
+                           : 'Jinhua1920keyboard';
+
+            $output = $conn->sshInteractive(
                 $device['hostname'], (int)$device['port'],
                 $device['username'], $pass,
-                'display current-configuration'
+                [
+                    ['expect' => '>',       'timeout' => 15, 'send' => '_cmdline-mode on'],
+                    ['expect' => '[Y/N]',   'timeout' => 5,  'send' => 'Y'],
+                    ['expect' => 'assword', 'timeout' => 5,  'send' => $cmdlinePass, 'sensitive' => true],
+                    ['expect' => '>',       'timeout' => 5,  'send' => $cmd],
+                    ['drain'  => 120,       'more'    => '---- More ----'],
+                    ['send'   => 'quit'],
+                ]
             );
+            // Strip ANSI/VT100 sequences produced by -tt PTY mode
+            $output = preg_replace('/\x1b\[[0-9;]*[a-zA-Z]|\x1b[()][AB012]|\r/', '', $output);
         } else {
             $output = $conn->sshCommand(
                 $device['hostname'], (int)$device['port'],
-                $device['username'], $pass,
-                'show running-config'
+                $device['username'], $pass, $cmd
             );
         }
         return trim($output);

@@ -75,19 +75,26 @@ class PluginFirewallDriverRegistry {
     }
 
     public static function fetchConfig(array $device, PluginFirewallConnector $conn): string {
-        // Custom command override: runs as sshCommand(), bypasses driver sequence
-        if (!empty(trim($device['backup_command'] ?? ''))) {
-            $pass = PluginFirewallConfig::decryptPassword($device['password_enc']);
-            return $conn->sshCommand(
-                $device['hostname'], (int)$device['port'],
-                $device['username'], $pass,
-                trim($device['backup_command'])
-            );
-        }
+        $customCmd = trim($device['backup_command'] ?? '');
         $d = self::get($device['vendor']);
         if (!$d) {
             throw new \RuntimeException("Vendor desconocido: {$device['vendor']}");
         }
+
+        if (!empty($customCmd)) {
+            // If the driver signals it needs interactive SSH (e.g. Comware devices that don't
+            // support SSH exec channel), route through getConfig() which handles it properly.
+            $needsInteractive = method_exists($d['class'], 'requiresInteractiveSsh')
+                             && call_user_func([$d['class'], 'requiresInteractiveSsh'], $device);
+            if (!$needsInteractive) {
+                $pass = PluginFirewallConfig::decryptPassword($device['password_enc']);
+                return $conn->sshCommand(
+                    $device['hostname'], (int)$device['port'],
+                    $device['username'], $pass, $customCmd
+                );
+            }
+        }
+
         return call_user_func([$d['class'], 'getConfig'], $device, $conn);
     }
 
