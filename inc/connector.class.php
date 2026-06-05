@@ -53,7 +53,7 @@ class PluginFirewallConnector {
             . ' -o LogLevel=ERROR'
             . ' -o ServerAliveInterval=10'
             . ' -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group14-sha256,diffie-hellman-group1-sha1'
-            . ' -o HostKeyAlgorithms=+ssh-rsa,rsa-sha2-256,rsa-sha2-512,ssh-dss'
+            . ' -o HostKeyAlgorithms=+ssh-rsa,rsa-sha2-256,rsa-sha2-512'
             . ' -o Ciphers=+aes256-cbc,aes128-cbc,3des-cbc,aes256-ctr,aes128-ctr'
             . ' -o PubkeyAuthentication=no'
             . ' -p %d %s@%s %s',
@@ -118,7 +118,7 @@ class PluginFirewallConnector {
             . ' -o BatchMode=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR'
             . ' -o ServerAliveInterval=10'
             . ' -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group14-sha256,diffie-hellman-group1-sha1'
-            . ' -o HostKeyAlgorithms=+ssh-rsa,rsa-sha2-256,rsa-sha2-512,ssh-dss'
+            . ' -o HostKeyAlgorithms=+ssh-rsa,rsa-sha2-256,rsa-sha2-512'
             . ' -o Ciphers=+aes256-cbc,aes128-cbc,3des-cbc,aes256-ctr,aes128-ctr'
             . ' -o MACs=+hmac-sha1,hmac-sha2-256'
             . ' -o PubkeyAuthentication=no'
