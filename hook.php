@@ -27,6 +27,7 @@ function plugin_firewall_install() {
               `is_active`                 TINYINT(1) NOT NULL DEFAULT 1,
               `last_backup_date`          TIMESTAMP NULL DEFAULT NULL,
               `last_backup_status`        VARCHAR(20) DEFAULT NULL,
+              `backup_command`             TEXT DEFAULT NULL,
               `comment`                   TEXT DEFAULT NULL,
               `date_creation`             TIMESTAMP NULL DEFAULT NULL,
               `date_mod`                  TIMESTAMP NULL DEFAULT NULL,
@@ -151,6 +152,15 @@ function plugin_firewall_install() {
     }
 
     // Schema migrations for already-installed versions
+    if ($DB->tableExists('glpi_plugin_firewall_devices')) {
+        $colsRes = $DB->doQuery("SHOW COLUMNS FROM `glpi_plugin_firewall_devices`");
+        $devCols = [];
+        while ($col = $colsRes->fetch_assoc()) $devCols[] = $col['Field'];
+        if (!in_array('backup_command', $devCols)) {
+            $DB->doQuery("ALTER TABLE `glpi_plugin_firewall_devices` ADD COLUMN `backup_command` TEXT DEFAULT NULL AFTER `snmp_community`");
+        }
+    }
+
     if ($DB->tableExists('glpi_plugin_firewall_interfaces')) {
         $existingCols = [];
         $colsRes = $DB->doQuery("SHOW COLUMNS FROM `glpi_plugin_firewall_interfaces`");

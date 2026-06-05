@@ -355,7 +355,42 @@ class PluginFirewallDevice extends CommonDBTM {
         echo '<div class="col-12"><label class="form-label">Comentario</label>';
         echo '<textarea name="comment" class="form-control" rows="2">' . $v('comment') . '</textarea></div>';
 
+        // Backup command override — build default map for JS
+        $defaultCmds = [];
+        foreach ($vendors as $vk => $vl) {
+            $defaultCmds[$vk] = PluginFirewallDriverRegistry::defaultBackupCommand($vk, $device['model'] ?? '');
+        }
+        $defaultCmdsJson = json_encode($defaultCmds, JSON_HEX_TAG);
+        $currentCmd      = $device['backup_command'] ?? '';
+        $currentVendor   = $device['vendor'] ?? 'cisco';
+        $defaultPlaceholder = PluginFirewallDriverRegistry::defaultBackupCommand($currentVendor, $device['model'] ?? '');
+
+        echo '<div class="col-12 mt-2">';
+        echo '<label class="form-label d-flex align-items-center gap-2">';
+        echo 'Comando de backup <span class="badge bg-secondary">Avanzado</span></label>';
+        echo '<textarea name="backup_command" id="backup_command" class="form-control font-monospace" rows="2"';
+        echo ' placeholder="' . htmlspecialchars($defaultPlaceholder ?: 'Usa el default del driver') . '">';
+        echo htmlspecialchars($currentCmd) . '</textarea>';
+        echo '<small class="text-muted">Vacío = usa la secuencia del driver. Si lo completás, siempre corre como <code>sshCommand()</code> sin modo interactivo.</small>';
+        echo '</div>';
+
         echo '</div>'; // row
+
+        echo <<<JS
+        <script>
+        (function() {
+            const defaults = $defaultCmdsJson;
+            const vendorSel = document.querySelector('select[name="vendor"]');
+            const modelField = document.querySelector('input[name="model"]');
+            const cmdField   = document.getElementById('backup_command');
+            function updatePlaceholder() {
+                const vendor = vendorSel ? vendorSel.value : '';
+                cmdField.placeholder = defaults[vendor] || 'Usa el default del driver';
+            }
+            if (vendorSel) vendorSel.addEventListener('change', updatePlaceholder);
+        })();
+        </script>
+        JS;
 
         echo '<div class="mt-3">';
         echo '<button type="submit" name="action" value="save" class="btn btn-primary me-2"><i class="ti ti-check me-1"></i>Guardar</button>';
@@ -392,8 +427,9 @@ class PluginFirewallDevice extends CommonDBTM {
             'is_active'     => isset($post['is_active']) ? 1 : 0,
             'backup_schedule' => $post['backup_schedule'] ?? 'manual',
             'comment'       => trim($post['comment'] ?? ''),
-            'snmp_community'=> trim($post['snmp_community'] ?? ''),
-            'date_mod'      => date('Y-m-d H:i:s'),
+            'snmp_community' => trim($post['snmp_community'] ?? ''),
+            'backup_command' => trim($post['backup_command'] ?? '') ?: null,
+            'date_mod'       => date('Y-m-d H:i:s'),
         ];
 
         if (!empty($post['password'])) {

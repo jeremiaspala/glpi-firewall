@@ -9,28 +9,19 @@ class PluginFirewallDriverHpe {
         // \b fails on "HP1920" (HP+1920 are both \w), use plain substring match
         $isComware = (bool)preg_match('/(comware|1910|1920|1950|5500|5900|7500)/i', $model);
 
+        // sshCommand() no asigna PTY (-tt) → los dispositivos no paginan el output.
+        // sshInteractive() usa -tt y el drain corta en el --More-- de Comware/ProCurve.
         if ($isComware) {
-            // Comware: screen-length disable → display current-configuration
-            $output = $conn->sshInteractive(
+            $output = $conn->sshCommand(
                 $device['hostname'], (int)$device['port'],
                 $device['username'], $pass,
-                [
-                    ['expect' => '>',  'send' => 'screen-length disable',       'timeout' => 10],
-                    ['expect' => '>',  'send' => 'display current-configuration','timeout' => 5],
-                    ['drain'  => 120],
-                    ['send'   => 'quit'],
-                ]
+                'display current-configuration'
             );
         } else {
-            // ProCurve/ArubaOS-Switch: no page then show running-config
-            $output = $conn->sshInteractive(
+            $output = $conn->sshCommand(
                 $device['hostname'], (int)$device['port'],
                 $device['username'], $pass,
-                [
-                    ['expect' => '#',  'send' => 'no page',           'timeout' => 10],
-                    ['expect' => '#',  'send' => 'show running-config','timeout' => 5],
-                    ['drain'  => 120],
-                ]
+                'show running-config'
             );
         }
         return trim($output);

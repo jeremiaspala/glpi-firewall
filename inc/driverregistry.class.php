@@ -55,7 +55,35 @@ class PluginFirewallDriverRegistry {
         return $d ? $d['is_firewall'] : false;
     }
 
+    /**
+     * Default backup commands shown as placeholder in the device form.
+     * Used when no custom backup_command is set.
+     */
+    public static function defaultBackupCommand(string $vendor, string $model = ''): string {
+        return match($vendor) {
+            'mikrotik'  => '/export verbose',
+            'cisco_asa' => 'show running-config',
+            'cisco'     => 'show running-config',
+            'cisco_ftd' => '',
+            'hpe'       => (bool)preg_match('/(comware|1910|1920|1950|5500|5900|7500)/i', $model)
+                               ? 'display current-configuration'
+                               : 'show running-config',
+            'fortinet'  => 'show full-configuration',
+            'tplink'    => 'show running-config',
+            default     => '',
+        };
+    }
+
     public static function fetchConfig(array $device, PluginFirewallConnector $conn): string {
+        // Custom command override: runs as sshCommand(), bypasses driver sequence
+        if (!empty(trim($device['backup_command'] ?? ''))) {
+            $pass = PluginFirewallConfig::decryptPassword($device['password_enc']);
+            return $conn->sshCommand(
+                $device['hostname'], (int)$device['port'],
+                $device['username'], $pass,
+                trim($device['backup_command'])
+            );
+        }
         $d = self::get($device['vendor']);
         if (!$d) {
             throw new \RuntimeException("Vendor desconocido: {$device['vendor']}");

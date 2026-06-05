@@ -218,12 +218,14 @@ class PluginFirewallBackup extends CommonDBTM {
 
     private static function purgeOld(int $deviceId): void {
         global $DB;
-        $days = (int) PluginFirewallConfig::get('backup_keep_days', 90);
+        $days   = (int) PluginFirewallConfig::get('backup_keep_days', 90);
         $cutoff = date('Y-m-d H:i:s', strtotime("-$days days"));
-        $DB->delete('glpi_plugin_firewall_backups', [
-            'plugin_firewall_devices_id' => $deviceId,
-            ['backup_date', '<', $cutoff],
-        ]);
+        // GLPI 11: use doQuery() for comparisons; the ORM array ['f','<','v'] generates broken SQL
+        $DB->doQuery(
+            "DELETE FROM `glpi_plugin_firewall_backups`
+             WHERE `plugin_firewall_devices_id` = " . (int)$deviceId . "
+               AND `backup_date` < '" . addslashes($cutoff) . "'"
+        );
     }
 
     public static function renderList(int $deviceId = 0): void {
